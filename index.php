@@ -1,4 +1,5 @@
 <?php
+   
  //Include the Router logic
  include_once './phpLogicPack/router.php';
 
@@ -41,7 +42,7 @@
 Router::handleRequest();
 
 
-
+ob_end_flush();
  ?>
 
 

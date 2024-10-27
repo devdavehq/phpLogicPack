@@ -1,4 +1,5 @@
 <?php
+ob_start();
 class Router
 {
     private static $routes = [];
@@ -7,6 +8,41 @@ class Router
     private static $namedRoutes = [];
     private static $fallbackHandler;
     private static $middlewareGroups = [];
+    private static $globalMiddleware = []; // Array to hold global middleware
+
+    // Method to register global middleware
+    public static function use($middleware)
+    {
+        $method = $_SERVER['REQUEST_METHOD'];
+        self::$globalMiddleware[] = $middleware; // Add middleware to the global array
+        // Prepare parameters to pass to the middleware
+        $rawInput = file_get_contents("php://input"); // Read raw input for PUT and DELETE
+        $parsedInput = [];
+
+        // Parse the input if it's not empty
+        if (!empty($rawInput)) {
+            parse_str($rawInput, $parsedInput); // Parse the raw input into an associative array
+        }
+
+        // Prepare parameters for middleware
+        $params = [
+            'method' => $method, // Pass the request method
+            'GET' => $_GET ?? [], // Use null coalescing to provide an empty array if not set
+            'POST' => $_POST ?? [], // Same for POST
+            'PUT' => $parsedInput, // Use parsed input for PUT
+            'DELETE' => $parsedInput // Use parsed input for DELETE
+        ];
+
+        // Execute global middleware before handling routes
+        foreach (self::$globalMiddleware as $middleware) {
+            $middlewareResult = $middleware($params, []); // Call global middleware with superglobal params
+            if ($middlewareResult === false) {
+                // Handle the failure case immediately
+                echo Router::sendResponse(401, 'Unauthorized'); // Example response
+                return; // Stop further execution
+            }
+        }
+    }
 
     public static function addRoute($method, $url, $handler, $middleware = null)
     {
@@ -29,6 +65,8 @@ class Router
         $method = $_SERVER['REQUEST_METHOD'];
         $path = $_SERVER['REQUEST_URI'];
 
+
+
         foreach (self::$routes as $route) {
             $matches = self::match($path, $route['url']);
             if ($matches !== false && $route['method'] === $method) {
@@ -39,12 +77,11 @@ class Router
                 }
                 $allParams = array_merge($matches, $queryParams);
 
-                // Execute middleware if it exists
+                // Execute route-specific middleware
                 foreach ($route['middleware'] as $middleware) {
                     $middlewareResult = $middleware($allParams, $matches);
                     if ($middlewareResult === false) {
-                        // If middleware returns false, stop execution
-                        return;
+                        return; // Stop execution if middleware fails
                     }
                 }
 
@@ -69,6 +106,7 @@ class Router
                         $requestData = [];
                 }
 
+               
                 $response = $route['handler']($allParams, $matches, $requestData);
                 self::sendResponse(200, $response);
                 return;
@@ -145,7 +183,7 @@ class Router
                 $prefix .= '/' . trim($group['prefix'], '/');
             }
             if (isset($group['middleware'])) {
-                $middleware = array_merge($middleware, (array)$group['middleware']);
+                $middleware = array_merge($middleware, (array) $group['middleware']);
             }
         }
         return ['prefix' => $prefix, 'middleware' => $middleware];
@@ -178,7 +216,7 @@ class Router
         if (is_string($middleware) && isset(self::$middlewareGroups[$middleware])) {
             return self::$middlewareGroups[$middleware];
         }
-        return (array)$middleware;
+        return (array) $middleware;
     }
 }
 
